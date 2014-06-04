@@ -3,6 +3,7 @@ var bodyParser = require("body-parser");
 var winston = require('winston');
 var dateFormat = require('dateformat');
 var r = require('rethinkdb');
+var Q = require('q');
 var config = require('./config');
 if(config.mqtt.enable){
    var mqtt = require('mqtt');
@@ -72,10 +73,16 @@ app.get("/transactions/all", function(req, res){
 app.get("/transactions/:name", function(req, res){
 	res.header("Access-Control-Allow-Origin", "*");
 	res.header("Access-Control-Allow-Headers", "X-Requested-With");
-	getUserTransactionsAsync(req.params.name, function(data){
-		console.log(data);
-		res.send(data);
-	});
+	// getUserTransactionsAsync(req.params.name, function(data){
+	// 	res.send(JSON.stringify(data));
+	// });
+    getUserTransactionsAsync(req.params.name)
+    .then(function(data){
+        res.send(JSON.stringify({result: data}))
+    },
+    function(error){
+        res.send(JSON.stringify({error: error}))
+    });
 });
 
 app.post('/user/add', function(req, res){
@@ -153,15 +160,23 @@ function getAllUsersAsync(cb){
     })
 }
 
-function getUserTransactionsAsync(username, cb){
+function getUserTransactionsAsync(username){
+    var deferred = Q.defer();
 	r.table('transactions').filter(r.row('username').eq(username)).
     run(connection, function(err, cursor) {
-        if (err) throw err;
+        if (err) {
+            deferred.reject(err);
+            return;
+        }
         cursor.toArray(function(err, result) {
-            if (err) throw err;
-            cb(JSON.stringify(result, null, 2));
+            if (err) {
+                deferred.reject(err);
+                return;
+            }
+            deferred.resolve(result);
         });
     });
+    return deferred.promise;
 }
 
 function getAllTransactionsAsync(cb){
