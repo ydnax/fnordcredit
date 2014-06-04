@@ -73,14 +73,12 @@ app.get("/transactions/all", function(req, res){
 app.get("/transactions/:name", function(req, res){
 	res.header("Access-Control-Allow-Origin", "*");
 	res.header("Access-Control-Allow-Headers", "X-Requested-With");
-	// getUserTransactionsAsync(req.params.name, function(data){
-	// 	res.send(JSON.stringify(data));
-	// });
     getUserTransactionsAsync(req.params.name)
     .then(function(data){
         res.send(JSON.stringify({result: data}))
     },
     function(error){
+        winston.log('error', '/transactions/:name error: ' + error.name + " " + error.msg);
         res.send(JSON.stringify({error: error}))
     });
 });
