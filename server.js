@@ -38,11 +38,11 @@ function serverStart(connection){
 	io.sockets
 	.on('connection', function (socket) {
 		sock = socket;
-		getAllUsersAsync(function(data){
+		getAllUsersAsync().then(function(data) {
 			socket.emit('accounts', JSON.stringify(data));
 		});
 		socket.on('getAccounts', function (data) {
-			getAllUsersAsync(function(data){
+			getAllUsersAsync().then(function(data) {
 				socket.emit('accounts', JSON.stringify(data));
 			});
 		})
@@ -57,17 +57,27 @@ function serverStart(connection){
 app.get("/users/all", function(req, res){
 	res.header("Access-Control-Allow-Origin", "*");
 	res.header("Access-Control-Allow-Headers", "X-Requested-With");
-	getAllUsersAsync(function(data){
-		res.send(JSON.stringify(data));
-	});
+	getAllUsersAsync()
+    .then(function(data){
+        res.send(JSON.stringify({result: data}))
+    },
+    function(error){
+        winston.log('error', '/users/all ' + error.name + " " + error.msg);
+        res.send(JSON.stringify({error: error}))
+    });
 });
 
 app.get("/transactions/all", function(req, res){
 	res.header("Access-Control-Allow-Origin", "*");
 	res.header("Access-Control-Allow-Headers", "X-Requested-With");
-	getAllTransactionsAsync(function(data){
-		res.send(JSON.stringify(data));
-	});
+	getAllTransactionsAsync()
+ 	.then(function(data){
+        res.send(JSON.stringify({result: data}))
+    },
+    function(error){
+        winston.log('error', '/transactions/all ' + error.name + " " + error.msg);
+        res.send(JSON.stringify({error: error}))
+    });
 });
 
 app.get("/transactions/:name", function(req, res){
@@ -89,32 +99,28 @@ app.post('/user/add', function(req, res){
 });
 
 app.post('/user/rename', function(req, res){
-	var user = undefined;
-	getUserAsync(req.body.username, function(userObj){
-		user = userObj;
-
-		var newname = req.body.newname;
-
+	getUserAsync(req.body.username).then(function(user){
 		if(user == undefined){
 			res.send(404, "User not found");
 			winston.log('error', '[userCredit] No user ' + req.body.username + ' found.')
 			return;
 		}
 
+		var newname = req.body.newname;
+
 		renameUser(user, newname, res);
-		
-		getAllUsersAsync(function(users){
+
+		res.send(JSON.stringify(user));
+		getAllUsersAsync().then(function(users){
 			sock.broadcast.emit('accounts', JSON.stringify(users));
 			sock.emit('accounts', JSON.stringify(users));
-			res.send(JSON.stringify(user));
 		});
-
 	})
 });
 
 app.post("/user/credit", function(req, res){
 	var user = undefined;
-	getUserAsync(req.body.username, function(userObj){
+	getUserAsync(req.body.username).then(function(userObj){
 		user = userObj;
 
 		var delta = parseFloat(req.body.delta);
@@ -141,21 +147,34 @@ app.post("/user/credit", function(req, res){
 	})
 });
 
-function getUserAsync(username, cb){
-	r.table("users").get(username).run(connection, function(e, table){
-        if(e){throw e}
-        cb(table);
-    })	
+function getUserAsync(username){
+	var deferred = Q.defer();
+    r.table("users").get(username).run(connection, function(err, user){
+        if (err) {
+            deferred.reject(err);
+            return;
+        }
+        deferred.resolve(user);
+    });
+    return deferred.promise;
 }
 
-function getAllUsersAsync(cb){
-    r.table("users").run(connection, function(e, table){
-        if(e){throw e}
-        table.toArray(function(e, data){
-        	if(e){throw e}
-        	cb(data);
-        })
-    })
+function getAllUsersAsync(){
+    var deferred = Q.defer();
+    r.table('users').run(connection, function(err, cursor) {
+        if (err) {
+            deferred.reject(err);
+            return;
+        }
+        cursor.toArray(function(err, result) {
+            if (err) {
+                deferred.reject(err);
+                return;
+            }
+            deferred.resolve(result);
+        });
+    });
+    return deferred.promise;
 }
 
 function getUserTransactionsAsync(username){
@@ -177,14 +196,22 @@ function getUserTransactionsAsync(username){
     return deferred.promise;
 }
 
-function getAllTransactionsAsync(cb){
-    r.table("transactions").run(connection, function(e, table){
-        if(e){throw e}
-        table.toArray(function(e, data){
-        	if(e){throw e}
-        	cb(data);
-        })
-    })
+function getAllTransactionsAsync(){
+    var deferred = Q.defer();
+    r.table('transactions').run(connection, function(err, cursor) {
+        if (err) {
+            deferred.reject(err);
+            return;
+        }
+        cursor.toArray(function(err, result) {
+            if (err) {
+                deferred.reject(err);
+                return;
+            }
+            deferred.resolve(result);
+        });
+    });
+    return deferred.promise;
 }
 
 
@@ -198,7 +225,7 @@ function addUser(username, res){
 			winston.log('error', "Couldn't save user " + username + err);
 			res.send(409, "User exists already.");
 		}else{
-			getAllUsersAsync(function(users){
+			getAllUsersAsync().then(function(users){
 				sock.broadcast.emit('accounts', JSON.stringify(users));
 				sock.emit('accounts', JSON.stringify(users));
 
